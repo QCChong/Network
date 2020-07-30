@@ -26,7 +26,7 @@ typedef struct
 }message;
 
 client_user users[THREAD_NUMBER];
- 
+int users_current = 0;
 int creat_listen(){
 	// Bind the host, port and return the socket.
 	int sockfd;
@@ -73,6 +73,7 @@ client_user wait_client(int listen_sockfd){
 	struct sockaddr_in cli_addr;
 	client_user user;
 	unsigned int clilen;
+	char connected;
 
 	// Accept actual connection from the client 
 	clilen = sizeof(cli_addr);
@@ -83,9 +84,22 @@ client_user wait_client(int listen_sockfd){
 		exit(1);
 	}
 	else{  // Successfully connected, recieve username
-		user.client_socket = newsockfd;
-		read(newsockfd, user.name, sizeof(user.name));
-		printf(L_CYAN"Successfully connected a client："L_PURPLE"%s (%s)"NONE"\n", user.name,inet_ntoa(cli_addr.sin_addr));		
+		if (users_current>=THREAD_NUMBER){
+			printf(L_RED"The client cannot connect, the maximum number("L_PURPLE"%d"L_RED") " "of connections has been exceeded"NONE"\n",THREAD_NUMBER);
+			connected = 'F';
+			// Exceed the maximum number of connections, notify the client, and close the socket
+			write(newsockfd, &connected, sizeof(connected));
+			close(newsockfd);
+			memset(&user,0,sizeof(user));
+		}
+		else{
+			user.client_socket = newsockfd;
+			users_current++;
+			connected = 'T';
+			write(newsockfd, &connected, sizeof(connected));
+			read(newsockfd, user.name, sizeof(user.name));
+			printf(L_CYAN"Successfully connected a client："L_PURPLE"%s (%s)	"L_CYAN"Current connections: "L_PURPLE"%d"NONE"\n", user.name,inet_ntoa(cli_addr.sin_addr),users_current);
+		}
 	}
 	return user;
 }
@@ -126,7 +140,15 @@ void *hanld_client(void *arg){
 			exit(1);
 		}
 		else if(res == 0){
-			printf(L_RED"No information is obtained from the client(%s), the client may have been closed."NONE"\n",name);
+			// clean info of the user.
+			for(int i=0;i<THREAD_NUMBER;i++){
+				if(users[i].client_socket == client_socket){
+					memset(&users[i],0,sizeof(users[i]));
+					users_current--;
+				}
+			}
+			printf(L_RED"No information is obtained from the client(%s), the client may have been closed."NONE,msg.name);
+			printf(L_CYAN"	Current connections: "L_PURPLE"%d"NONE"\n",users_current);
 			break;
 		}
 		else{
@@ -142,25 +164,36 @@ void *hanld_client(void *arg){
 	}
 	pthread_exit(NULL);
 }
+int get_users_index(){
+	for(int i=0;i<THREAD_NUMBER;i++){
+		if(users[i].client_socket==0)
+			return i;
+	}
+}
 
 int main(int argc, char *argv[]) {
 	int listen_socket = creat_listen();
-	int thread_count = 0, res;
+	int index = 0, res;
 	client_user user;
-	pthread_t thread[THREAD_NUMBER];
+	pthread_t _thread;
+	memset(&users, 0, sizeof(users));
 	while(1){
 		// Listen to the client and add user
-		user = wait_client(listen_socket); 
-		strcpy(users[thread_count].name,user.name);
-		users[thread_count].client_socket = user.client_socket;
+		user = wait_client(listen_socket);
+		// If the monitoring fails or exceeds the maximum number of connections, skip this loop
+		if(user.client_socket==0){
+			continue;
+		}
+
+		index = get_users_index();
+		strcpy(users[index].name,user.name);
+		users[index].client_socket = user.client_socket;
 
 		// Create thread to listen to new clients
-		res = pthread_create(&thread[thread_count], NULL, hanld_client, &user);
+		res = pthread_create(&_thread, NULL, hanld_client, &user);
 		if (res != 0) {
-            	printf(L_RED"Create thread %d failed"NONE"\n", thread_count);
-                exit(1);
-        }else{
-        	thread_count++;
+            printf(L_RED"Create thread failed"NONE"\n");
+            exit(1);
         }
 	}
 	

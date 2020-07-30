@@ -63,6 +63,7 @@ int connect_server(int argc, char *argv[]){
 	char server_port[20];
 	char server_addr[20];
 	char client_name[20];
+	char connected[20];
 	uint16_t portno;
 	struct sockaddr_in serv_addr;
 	struct hostent *server;
@@ -82,9 +83,9 @@ int connect_server(int argc, char *argv[]){
 		client_name[strlen(client_name)-1]='\0';
 	}
 	else{
-		strcpy(argv[1],server_addr);
-		strcpy(argv[2],server_port);
-		strcpy(argv[3],client_name);
+		strcpy(server_addr,argv[1]);
+		strcpy(server_port,argv[2]);
+		strcpy(client_name,argv[3]);
 	}
 
 	// Create a socket point 
@@ -112,9 +113,14 @@ int connect_server(int argc, char *argv[]){
 		exit(1);
 	}
 	else{  // Successfully connected, send username
-		write(sockfd, client_name, strlen(client_name)+1);
+		read(sockfd, connected, sizeof(connected));
+		if(connected[0]=='T'){
+			write(sockfd, client_name, strlen(client_name)+1);
+		}else{
+			printf(L_RED"The maximum number of connections to the server has been exceeded and cannot be connected.\n");
+			exit(0);
+		}
 	}
-
 	return sockfd;
 }
 
